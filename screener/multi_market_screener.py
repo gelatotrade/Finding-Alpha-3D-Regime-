@@ -1,53 +1,67 @@
 """
-Multi-Market Alpha Screener — Main Orchestrator.
-Combines prediction markets, crypto, stocks, and news
-to generate a unified alpha dashboard.
+Multi-Market Alpha Screener — Institutional Orchestrator.
+
+Integrates all components:
+- Multi-source data fetching with resilience
+- Alpha signal generation with IC tracking
+- Backtesting with Deflated Sharpe and PBO
+- Portfolio construction (risk parity, Kelly, BL)
+- Drift detection and tail risk monitoring
+- 3D animated PnL surface generation
 """
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
+import numpy as np
 import pandas as pd
 
 from data_fetchers.polymarket import PolymarketFetcher
 from data_fetchers.kalshi import KalshiFetcher
-from data_fetchers.crypto import ChainlinkFetcher, PythFetcher, CoinGeckoFetcher
+from data_fetchers.crypto import ChainlinkFetcher, PythFetcher, CoinGeckoFetcher, OracleAggregator
 from data_fetchers.stocks import YFinanceFetcher, FinnhubFetcher
 from data_fetchers.news import NewsApiFetcher
 from signals.alpha_engine import AlphaSignalEngine
 from backtesting.engine import BacktestEngine, Strategy
 from risk.drift_detector import DriftDetector
 from risk.tail_risk import TailRiskScreener
+from risk.portfolio import PortfolioConstructor
 from visualization.pnl_surfaces import PnLSurfaceVisualizer
 from screener.strategies import (
     momentum_crossover,
     mean_reversion_bollinger,
     rsi_strategy,
+    regime_adaptive,
     momentum_crossover_factory,
     bollinger_factory,
 )
-from config.settings import STOCK_WATCHLIST, CRYPTO_WATCHLIST, SCAN_INTERVAL_SECONDS
+from config.settings import (
+    STOCK_WATCHLIST, CRYPTO_WATCHLIST, SCAN_INTERVAL_SECONDS,
+    validate_config,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class MultiMarketScreener:
     """
-    Unified screener that:
-    1. Fetches live data from prediction markets, crypto, and stocks
-    2. Pulls news and computes sentiment-based alpha signals
-    3. Runs backtests with parameter sweeps
-    4. Monitors drift and tail risk
-    5. Generates animated 3D PnL surfaces
+    Institutional multi-market screener that orchestrates:
+    data → signals → backtest → risk → portfolio → visualization.
     """
 
     def __init__(self):
+        # Validate config at startup
+        warnings = validate_config()
+        if warnings:
+            logger.info("Config validation: %d warnings", len(warnings))
+
         # Data fetchers
         self.polymarket = PolymarketFetcher()
         self.kalshi = KalshiFetcher()
         self.chainlink = ChainlinkFetcher()
         self.pyth = PythFetcher()
         self.coingecko = CoinGeckoFetcher()
+        self.oracle_agg = OracleAggregator()
         self.yfinance = YFinanceFetcher()
         self.finnhub = FinnhubFetcher()
         self.news = NewsApiFetcher()
@@ -57,6 +71,7 @@ class MultiMarketScreener:
         self.backtest_engine = BacktestEngine()
         self.drift_detector = DriftDetector()
         self.tail_risk = TailRiskScreener()
+        self.portfolio = PortfolioConstructor()
         self.visualizer = PnLSurfaceVisualizer()
 
         # State
@@ -66,60 +81,62 @@ class MultiMarketScreener:
     # ── Data Collection ──────────────────────────────────────────────────
 
     def fetch_prediction_markets(self) -> pd.DataFrame:
-        """Fetch and combine prediction market data."""
         logger.info("Fetching prediction markets...")
-        poly = self.polymarket.get_markets(limit=30)
-        kalshi = self.kalshi.get_events(limit=30)
-
         frames = []
-        if not poly.empty:
-            frames.append(poly)
-        if not kalshi.empty:
-            frames.append(kalshi)
+        for name, fetcher, method in [
+            ("polymarket", self.polymarket, "get_markets"),
+            ("kalshi", self.kalshi, "get_events"),
+        ]:
+            try:
+                df = getattr(fetcher, method)(limit=50)
+                if not df.empty:
+                    frames.append(df)
+                    logger.info("  %s: %d markets", name, len(df))
+            except Exception as e:
+                logger.error("  %s failed: %s", name, e)
 
         if frames:
             combined = pd.concat(frames, ignore_index=True)
-            logger.info("Fetched %d prediction markets", len(combined))
             return combined
         return pd.DataFrame()
 
     def fetch_crypto_prices(self) -> Dict[str, pd.DataFrame]:
-        """Fetch crypto OHLCV + live oracle prices."""
         logger.info("Fetching crypto prices...")
-
-        # Live oracle prices
-        chainlink_prices = self.chainlink.get_prices()
-        pyth_prices = self.pyth.get_prices()
-        if not chainlink_prices.empty:
-            logger.info("Chainlink prices:\n%s", chainlink_prices.to_string())
-        if not pyth_prices.empty:
-            logger.info("Pyth prices:\n%s", pyth_prices.to_string())
+        # Oracle aggregation
+        agg_prices = self.oracle_agg.get_aggregated_prices()
+        if not agg_prices.empty:
+            logger.info("  Oracle aggregated: %d assets, max spread: %.2f%%",
+                        len(agg_prices),
+                        agg_prices["cross_source_spread_pct"].max())
 
         # Historical OHLCV
-        ohlcv = self.coingecko.get_all_ohlcv(CRYPTO_WATCHLIST[:3], days=90)
+        ohlcv = self.coingecko.get_all_ohlcv(CRYPTO_WATCHLIST[:4], days=90)
+        logger.info("  OHLCV: %d assets loaded", len(ohlcv))
         return ohlcv
 
     def fetch_stock_prices(self) -> Dict[str, pd.DataFrame]:
-        """Fetch stock OHLCV data."""
         logger.info("Fetching stock prices...")
-        return self.yfinance.get_batch_ohlcv(STOCK_WATCHLIST[:5], period="3mo")
+        result = self.yfinance.get_batch_ohlcv(STOCK_WATCHLIST[:8], period="3mo")
+        logger.info("  Stocks: %d assets loaded", len(result))
+        return result
 
     def fetch_news_sentiment(
         self, stock_symbols: List[str], crypto_symbols: List[str]
     ) -> pd.DataFrame:
-        """Fetch news and compute sentiment for all assets."""
         logger.info("Fetching news sentiment...")
-        stock_news = self.news.get_news_for_assets(stock_symbols[:3], "stock")
-        crypto_news = self.news.get_news_for_assets(crypto_symbols[:3], "crypto")
+        frames = []
+        for syms, atype in [(stock_symbols[:3], "stock"), (crypto_symbols[:3], "crypto")]:
+            try:
+                df = self.news.get_news_for_assets(syms, atype)
+                if not df.empty:
+                    frames.append(df)
+            except Exception as e:
+                logger.error("  News fetch failed for %s: %s", atype, e)
 
-        all_news = pd.concat(
-            [df for df in [stock_news, crypto_news] if not df.empty],
-            ignore_index=True,
-        ) if not stock_news.empty or not crypto_news.empty else pd.DataFrame()
-
+        all_news = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
         if not all_news.empty:
             all_news = self.alpha_engine.compute_news_sentiment(all_news)
-
+            logger.info("  News: %d articles with sentiment", len(all_news))
         return all_news
 
     # ── Alpha Generation ─────────────────────────────────────────────────
@@ -131,24 +148,31 @@ class MultiMarketScreener:
         news_df: pd.DataFrame,
         pred_markets: pd.DataFrame,
     ) -> dict:
-        """Generate cross-market alpha signals."""
         logger.info("Generating alpha signals...")
-
-        # Per-asset sentiment
         sentiment_agg = self.alpha_engine.aggregate_asset_sentiment(news_df)
-
-        # Cross-market composite signals
         cross_signals = self.alpha_engine.cross_market_signals(
             stock_prices, crypto_prices, sentiment_agg
         )
-
-        # Prediction market edge
         pred_edge = self.alpha_engine.prediction_market_edge(pred_markets, sentiment_agg)
+
+        # Alpha decay analysis on top signals
+        alpha_decay = {}
+        for symbol, prices in list(stock_prices.items())[:3]:
+            if prices.empty or len(prices) < 50:
+                continue
+            mom = self.alpha_engine.momentum_signal(prices)
+            if not mom.empty and "mom_composite" in mom.columns:
+                decay = self.alpha_engine.alpha_decay_analysis(
+                    mom["mom_composite"], prices
+                )
+                if not decay.empty:
+                    alpha_decay[symbol] = decay
 
         return {
             "cross_market_signals": cross_signals,
             "prediction_edge": pred_edge,
             "sentiment_summary": sentiment_agg,
+            "alpha_decay": alpha_decay,
         }
 
     # ── Backtesting ──────────────────────────────────────────────────────
@@ -156,41 +180,51 @@ class MultiMarketScreener:
     def run_strategy_backtest(
         self, prices: pd.DataFrame, strategy_name: str = "momentum"
     ) -> dict:
-        """Run a backtest for a given strategy on price data."""
         strategies = {
             "momentum": Strategy("Momentum 10/30", momentum_crossover(10, 30)),
             "mean_reversion": Strategy("Bollinger 20/2", mean_reversion_bollinger(20, 2.0)),
             "rsi": Strategy("RSI 14", rsi_strategy(14)),
+            "regime_adaptive": Strategy("Regime Adaptive", regime_adaptive()),
         }
         strategy = strategies.get(strategy_name, strategies["momentum"])
-        result = self.backtest_engine.run(prices, strategy)
-        return {
-            "metrics": result.metrics,
-            "equity_curve": result.equity_curve,
-            "returns": result.returns,
-        }
 
-    def run_parameter_sweep(
-        self, prices: pd.DataFrame
-    ) -> dict:
-        """Run 2D parameter sweep for 3D PnL surface."""
-        result = self.backtest_engine.parameter_sweep(
-            prices,
-            signal_fn_factory=momentum_crossover_factory,
-            param_grid={"fast": [5, 10, 15, 20, 25], "slow": [20, 30, 40, 50, 60]},
-        )
-        return {
-            "best_metrics": result.metrics,
-            "pnl_surface": result.pnl_by_param,
-        }
+        try:
+            result = self.backtest_engine.run(prices, strategy)
+            # Monte Carlo
+            mc = self.backtest_engine.monte_carlo_simulation(result.returns)
+            # CPCV / PBO
+            pbo = self.backtest_engine.combinatorial_purged_cv(prices, strategy)
+
+            return {
+                "metrics": result.metrics,
+                "equity_curve": result.equity_curve,
+                "returns": result.returns,
+                "monte_carlo": mc,
+                "pbo": pbo,
+            }
+        except ValueError as e:
+            logger.warning("Backtest failed for %s: %s", strategy_name, e)
+            return {}
+
+    def run_parameter_sweep(self, prices: pd.DataFrame) -> dict:
+        try:
+            result = self.backtest_engine.parameter_sweep(
+                prices,
+                signal_fn_factory=momentum_crossover_factory,
+                param_grid={"fast": [5, 10, 15, 20, 25], "slow": [20, 30, 40, 50, 60]},
+            )
+            return {
+                "best_metrics": result.metrics,
+                "pnl_surface": result.pnl_by_param,
+                "monte_carlo": result.monte_carlo,
+            }
+        except ValueError as e:
+            logger.warning("Parameter sweep failed: %s", e)
+            return {}
 
     def run_time_evolving_sweep(
         self, prices: pd.DataFrame, n_periods: int = 6
     ) -> Dict[str, pd.DataFrame]:
-        """
-        Run parameter sweeps on rolling windows to create
-        time-evolving PnL surface data.
-        """
         total_len = len(prices)
         window_size = total_len // 2
         step = (total_len - window_size) // max(n_periods - 1, 1)
@@ -202,8 +236,10 @@ class MultiMarketScreener:
             if end > total_len:
                 break
             window_prices = prices.iloc[start:end]
-            period_label = str(window_prices.index[-1].date()) if hasattr(window_prices.index[-1], 'date') else f"Period {i+1}"
-
+            if hasattr(window_prices.index[-1], 'date'):
+                label = str(window_prices.index[-1].date())
+            else:
+                label = f"Period {i+1}"
             try:
                 result = self.backtest_engine.parameter_sweep(
                     window_prices,
@@ -211,11 +247,29 @@ class MultiMarketScreener:
                     param_grid={"fast": [5, 10, 15, 20], "slow": [25, 35, 45, 55]},
                 )
                 if result.pnl_by_param is not None:
-                    time_surfaces[period_label] = result.pnl_by_param
-            except Exception as e:
-                logger.warning("Sweep failed for period %s: %s", period_label, e)
-
+                    time_surfaces[label] = result.pnl_by_param
+            except ValueError:
+                pass
         return time_surfaces
+
+    # ── Portfolio Construction ────────────────────────────────────────────
+
+    def construct_portfolio(
+        self,
+        returns_dict: Dict[str, pd.Series],
+        method: str = "risk_parity",
+    ) -> dict:
+        if len(returns_dict) < 2:
+            return {}
+
+        df = pd.DataFrame(returns_dict).dropna()
+        if len(df) < 30:
+            return {}
+
+        weights = self.portfolio.optimize(df, method=method)
+        logger.info("Portfolio (%s): %s",
+                     method, {k: f"{v:.1%}" for k, v in weights.items()})
+        return weights
 
     # ── Risk Monitoring ──────────────────────────────────────────────────
 
@@ -227,9 +281,9 @@ class MultiMarketScreener:
         current_weights: Optional[Dict[str, float]] = None,
         target_weights: Optional[Dict[str, float]] = None,
     ) -> dict:
-        """Run full drift + tail risk scan."""
         drift_alerts = self.drift_detector.full_drift_scan(
-            returns, current_weights, target_weights
+            returns, current_weights, target_weights,
+            corr_data=pd.DataFrame(returns_dict) if returns_dict else None,
         )
         tail_alerts = self.tail_risk.full_tail_risk_scan(
             returns, equity, returns_dict
@@ -246,35 +300,26 @@ class MultiMarketScreener:
     # ── Visualization ────────────────────────────────────────────────────
 
     def generate_3d_surface(self, pnl_df: pd.DataFrame):
-        """Generate interactive 3D PnL surface."""
         return self.visualizer.plot_static_pnl_surface(
-            pnl_df, param1="fast", param2="slow", metric="sharpe",
-            title="Strategy PnL Surface: Sharpe Ratio",
+            pnl_df, "fast", "slow", "sharpe",
+            "Strategy PnL Surface: Sharpe Ratio",
         )
 
     def generate_animated_surface(self, time_surfaces: Dict[str, pd.DataFrame]):
-        """Generate animated time-evolving PnL surface."""
         return self.visualizer.plot_animated_pnl_surface(
-            time_surfaces, param1="fast", param2="slow", metric="sharpe",
-            title="Time-Evolving PnL Surface",
+            time_surfaces, "fast", "slow", "sharpe",
+            "Time-Evolving PnL Surface",
         )
 
     # ── Full Scan ────────────────────────────────────────────────────────
 
     def full_scan(self) -> dict:
-        """
-        Execute full multi-market scan:
-        1. Fetch all market data
-        2. Generate alpha signals
-        3. Run backtests
-        4. Check risk constraints
-        5. Prepare visualizations
-        """
-        logger.info("=" * 60)
-        logger.info("FULL MULTI-MARKET SCAN — %s", datetime.utcnow().isoformat())
-        logger.info("=" * 60)
+        scan_start = datetime.now(timezone.utc)
+        logger.info("=" * 70)
+        logger.info("FULL MULTI-MARKET SCAN — %s", scan_start.isoformat())
+        logger.info("=" * 70)
 
-        # 1. Fetch data
+        # 1. Fetch data (resilient — each source independent)
         pred_markets = self.fetch_prediction_markets()
         crypto_prices = self.fetch_crypto_prices()
         stock_prices = self.fetch_stock_prices()
@@ -287,69 +332,91 @@ class MultiMarketScreener:
             stock_prices, crypto_prices, news_df, pred_markets
         )
 
-        # 3. Backtest top signals on available data
+        # 3. Backtest top signals
         backtest_results = {}
         pnl_surfaces = {}
         time_surfaces = {}
 
-        for symbol, prices in list(stock_prices.items())[:3]:
+        for symbol, prices in list(stock_prices.items())[:5]:
             if prices.empty or len(prices) < 50:
                 continue
-            # Run backtest
-            bt = self.run_strategy_backtest(prices, "momentum")
-            backtest_results[symbol] = bt
 
-            # Parameter sweep
+            for strat_name in ["momentum", "mean_reversion", "regime_adaptive"]:
+                bt = self.run_strategy_backtest(prices, strat_name)
+                if bt:
+                    backtest_results[f"{symbol}_{strat_name}"] = bt
+
             sweep = self.run_parameter_sweep(prices)
-            pnl_surfaces[symbol] = sweep["pnl_surface"]
+            if sweep:
+                pnl_surfaces[symbol] = sweep.get("pnl_surface")
 
-            # Time-evolving sweep
             ts = self.run_time_evolving_sweep(prices, n_periods=4)
             if ts:
                 time_surfaces[symbol] = ts
 
-        # 4. Risk scan on combined returns
-        combined_returns = pd.DataFrame({
-            sym: bt["returns"]
-            for sym, bt in backtest_results.items()
-        })
-        if not combined_returns.empty:
-            portfolio_returns = combined_returns.mean(axis=1)
-            portfolio_equity = 100000 * (1 + portfolio_returns).cumprod()
-            risk_scan = self.run_risk_scan(
-                portfolio_returns, portfolio_equity,
-                returns_dict={sym: combined_returns[sym] for sym in combined_returns.columns},
-            )
-        else:
-            risk_scan = {}
+        # 4. Portfolio construction
+        returns_dict = {}
+        for sym, prices in stock_prices.items():
+            if not prices.empty and "close" in prices.columns:
+                returns_dict[sym] = prices["close"].pct_change().dropna()
 
-        self.last_scan = datetime.utcnow()
+        portfolio_weights = {}
+        if len(returns_dict) >= 2:
+            for method in ["risk_parity", "max_diversification"]:
+                portfolio_weights[method] = self.construct_portfolio(
+                    returns_dict, method
+                )
+
+        # 5. Risk scan
+        risk_scan = {}
+        if returns_dict:
+            df = pd.DataFrame(returns_dict).dropna()
+            if not df.empty:
+                portfolio_ret = df.mean(axis=1)
+                portfolio_eq = 100000 * (1 + portfolio_ret).cumprod()
+                rp_weights = portfolio_weights.get("risk_parity", {})
+                equal_weights = {s: 1.0/len(returns_dict) for s in returns_dict}
+
+                risk_scan = self.run_risk_scan(
+                    portfolio_ret, portfolio_eq,
+                    returns_dict=returns_dict,
+                    current_weights=equal_weights,
+                    target_weights=rp_weights if rp_weights else equal_weights,
+                )
+
+        scan_duration = (datetime.now(timezone.utc) - scan_start).total_seconds()
+
+        self.last_scan = scan_start
         self.scan_results = {
             "prediction_markets": pred_markets,
             "alpha_signals": alpha,
             "backtest_results": backtest_results,
             "pnl_surfaces": pnl_surfaces,
             "time_surfaces": time_surfaces,
+            "portfolio_weights": portfolio_weights,
             "risk": risk_scan,
-            "scan_time": self.last_scan,
+            "scan_time": scan_start,
+            "scan_duration_s": scan_duration,
         }
 
         self._print_summary()
         return self.scan_results
 
     def _print_summary(self):
-        """Print a concise scan summary."""
         r = self.scan_results
-        print("\n" + "=" * 60)
-        print(f"SCAN COMPLETE — {r.get('scan_time', '')}")
-        print("=" * 60)
+        print("\n" + "=" * 70)
+        print(f"SCAN COMPLETE — {r.get('scan_time', '')} ({r.get('scan_duration_s', 0):.1f}s)")
+        print("=" * 70)
 
         # Alpha signals
         alpha = r.get("alpha_signals", {})
         cs = alpha.get("cross_market_signals", pd.DataFrame())
         if not cs.empty:
             print("\n── TOP ALPHA SIGNALS ──")
-            print(cs.head(10).to_string(index=False))
+            display_cols = [c for c in ["symbol", "asset_type", "composite_alpha",
+                                         "momentum", "sentiment", "hurst_exponent",
+                                         "regime", "volatility_20d"] if c in cs.columns]
+            print(cs[display_cols].head(10).to_string(index=False))
 
         pe = alpha.get("prediction_edge", pd.DataFrame())
         if not pe.empty:
@@ -360,31 +427,56 @@ class MultiMarketScreener:
         bt = r.get("backtest_results", {})
         if bt:
             print("\n── BACKTEST RESULTS ──")
-            for sym, res in bt.items():
-                m = res["metrics"]
-                print(f"  {sym}: Sharpe={m['sharpe_ratio']:.2f}, "
-                      f"Return={m['total_return']:.1%}, "
-                      f"MaxDD={m['max_drawdown']:.1%}, "
-                      f"WinRate={m['win_rate']:.0%}")
+            for key, res in bt.items():
+                m = res.get("metrics", {})
+                pbo = res.get("pbo", {})
+                dsr = m.get("deflated_sharpe", {})
+                print(f"  {key}: Sharpe={m.get('sharpe_ratio', 0):.2f}, "
+                      f"Return={m.get('total_return', 0):.1%}, "
+                      f"MaxDD={m.get('max_drawdown', 0):.1%}, "
+                      f"Sortino={m.get('sortino_ratio', 0):.2f}, "
+                      f"PF={m.get('profit_factor', 0):.2f}")
+                if pbo:
+                    print(f"    PBO={pbo.get('pbo', 'N/A'):.0%}, "
+                          f"OOS Sharpe={pbo.get('mean_oos_sharpe', 0):.2f}")
+
+        # Portfolio
+        pw = r.get("portfolio_weights", {})
+        if pw:
+            print("\n── OPTIMAL PORTFOLIO ──")
+            for method, weights in pw.items():
+                if weights:
+                    print(f"  [{method}]: {', '.join(f'{k}={v:.1%}' for k, v in sorted(weights.items(), key=lambda x: -x[1])[:5])}")
 
         # Risk
         risk = r.get("risk", {})
         if risk:
             n_alerts = risk.get("total_alerts", 0)
-            print(f"\n── RISK ALERTS: {n_alerts} ──")
-            for alert in risk.get("drift_alerts", [])[:3]:
-                print(f"  [{alert.severity.upper()}] {alert.message}")
-            for alert in risk.get("tail_risk_alerts", [])[:3]:
-                print(f"  [{alert.severity.upper()}] {alert.message}")
+            metrics = risk.get("risk_metrics", {})
+            print(f"\n── RISK ({n_alerts} alerts) ──")
+            if metrics:
+                print(f"  VaR(99%): hist={metrics.get('var_99_hist', 0):.2%}, "
+                      f"EVT={metrics.get('var_99_evt', 0):.2%}, "
+                      f"CVaR={metrics.get('cvar_975', 0):.2%}")
+                print(f"  Vol: EWMA={metrics.get('ewma_vol', 0):.1%}, "
+                      f"21d={metrics.get('rolling_vol_21d', 0):.1%}")
+                print(f"  Tail: kurtosis={metrics.get('kurtosis', 0):.1f}, "
+                      f"skew={metrics.get('skewness', 0):.2f}, "
+                      f"Hill α={metrics.get('hill_tail_index', 0):.1f}")
 
-        print("=" * 60 + "\n")
+            for a in (risk.get("drift_alerts", []) + risk.get("tail_risk_alerts", []))[:5]:
+                print(f"  [{a.severity.upper()}] {a.message}")
+
+        print("=" * 70 + "\n")
 
     def run_continuous(self, interval: int = SCAN_INTERVAL_SECONDS):
-        """Run screener continuously at a fixed interval."""
         logger.info("Starting continuous screener (interval=%ds)", interval)
         while True:
             try:
                 self.full_scan()
+            except KeyboardInterrupt:
+                logger.info("Screener stopped by user")
+                break
             except Exception as e:
-                logger.error("Scan failed: %s", e)
+                logger.error("Scan failed: %s", e, exc_info=True)
             time.sleep(interval)
