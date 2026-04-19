@@ -50,97 +50,97 @@ ASSET_CONFIGS = {
     # ── Stocks ────────────────────────────────────────────────────────────
     "AAPL": {
         "category": "Stocks",
-        "n_days": 1260,
-        "ar1_schedule": [0.08, 0.12, 0.05, 0.15, 0.10, 0.07],
-        "ar2_schedule": [0.03, 0.05, 0.02, 0.06, 0.04, 0.03],
-        "mean_schedule": [0.0005, 0.0007, -0.0002, 0.0006, 0.0004, 0.0005],
-        "vol_schedule": [0.015, 0.018, 0.028, 0.016, 0.020, 0.017],
+        "n_days": 2520,
+        "ar1_schedule": [0.08, 0.12, 0.05, 0.15, 0.10, 0.07, 0.09, 0.14, 0.06, 0.11],
+        "ar2_schedule": [0.03, 0.05, 0.02, 0.06, 0.04, 0.03, 0.04, 0.06, 0.02, 0.04],
+        "mean_schedule": [0.0005, 0.0007, -0.0002, 0.0006, 0.0004, 0.0005, 0.0004, 0.0008, -0.0003, 0.0005],
+        "vol_schedule": [0.015, 0.018, 0.028, 0.016, 0.020, 0.017, 0.016, 0.022, 0.032, 0.018],
         "seed": 100,
     },
     "MSFT": {
         "category": "Stocks",
-        "n_days": 1260,
-        "ar1_schedule": [0.06, 0.10, 0.04, 0.12, 0.08, 0.06],
-        "ar2_schedule": [0.02, 0.04, 0.01, 0.05, 0.03, 0.02],
-        "mean_schedule": [0.0004, 0.0006, -0.0001, 0.0005, 0.0003, 0.0004],
-        "vol_schedule": [0.014, 0.016, 0.025, 0.015, 0.018, 0.015],
+        "n_days": 2520,
+        "ar1_schedule": [0.06, 0.10, 0.04, 0.12, 0.08, 0.06, 0.07, 0.11, 0.05, 0.09],
+        "ar2_schedule": [0.02, 0.04, 0.01, 0.05, 0.03, 0.02, 0.03, 0.05, 0.01, 0.03],
+        "mean_schedule": [0.0004, 0.0006, -0.0001, 0.0005, 0.0003, 0.0004, 0.0003, 0.0007, -0.0002, 0.0004],
+        "vol_schedule": [0.014, 0.016, 0.025, 0.015, 0.018, 0.015, 0.015, 0.019, 0.028, 0.016],
         "seed": 101,
     },
     "TSLA": {
         "category": "Stocks",
-        "n_days": 1260,
-        "ar1_schedule": [0.10, 0.18, 0.06, 0.20, 0.14, 0.09],
-        "ar2_schedule": [0.04, 0.08, 0.02, 0.09, 0.06, 0.04],
-        "mean_schedule": [0.0008, 0.0012, -0.0005, 0.0010, 0.0006, 0.0007],
-        "vol_schedule": [0.030, 0.040, 0.055, 0.035, 0.042, 0.032],
+        "n_days": 2520,
+        "ar1_schedule": [0.10, 0.18, 0.06, 0.20, 0.14, 0.09, 0.12, 0.19, 0.07, 0.15],
+        "ar2_schedule": [0.04, 0.08, 0.02, 0.09, 0.06, 0.04, 0.05, 0.08, 0.03, 0.06],
+        "mean_schedule": [0.0008, 0.0012, -0.0005, 0.0010, 0.0006, 0.0007, 0.0006, 0.0013, -0.0007, 0.0009],
+        "vol_schedule": [0.030, 0.040, 0.055, 0.035, 0.042, 0.032, 0.033, 0.045, 0.058, 0.036],
         "seed": 102,
     },
     # ── Crypto ────────────────────────────────────────────────────────────
     "BTC": {
         "category": "Crypto",
-        "n_days": 1260,
-        "ar1_schedule": [0.05, 0.10, 0.03, 0.12, 0.08, 0.06],
-        "ar2_schedule": [0.02, 0.04, 0.01, 0.05, 0.03, 0.02],
-        "mean_schedule": [0.0006, 0.0010, -0.0004, 0.0008, 0.0005, 0.0006],
-        "vol_schedule": [0.035, 0.045, 0.060, 0.038, 0.050, 0.040],
+        "n_days": 2520,
+        "ar1_schedule": [0.05, 0.10, 0.03, 0.12, 0.08, 0.06, 0.06, 0.11, 0.04, 0.09],
+        "ar2_schedule": [0.02, 0.04, 0.01, 0.05, 0.03, 0.02, 0.02, 0.05, 0.01, 0.03],
+        "mean_schedule": [0.0006, 0.0010, -0.0004, 0.0008, 0.0005, 0.0006, 0.0005, 0.0011, -0.0005, 0.0007],
+        "vol_schedule": [0.035, 0.045, 0.060, 0.038, 0.050, 0.040, 0.037, 0.048, 0.065, 0.042],
         "seed": 200,
     },
     "ETH": {
         "category": "Crypto",
-        "n_days": 1260,
-        "ar1_schedule": [0.07, 0.14, 0.04, 0.16, 0.10, 0.08],
-        "ar2_schedule": [0.03, 0.06, 0.01, 0.07, 0.04, 0.03],
-        "mean_schedule": [0.0007, 0.0012, -0.0006, 0.0010, 0.0006, 0.0007],
-        "vol_schedule": [0.042, 0.055, 0.075, 0.048, 0.060, 0.045],
+        "n_days": 2520,
+        "ar1_schedule": [0.07, 0.14, 0.04, 0.16, 0.10, 0.08, 0.08, 0.15, 0.05, 0.12],
+        "ar2_schedule": [0.03, 0.06, 0.01, 0.07, 0.04, 0.03, 0.03, 0.07, 0.02, 0.05],
+        "mean_schedule": [0.0007, 0.0012, -0.0006, 0.0010, 0.0006, 0.0007, 0.0006, 0.0013, -0.0008, 0.0008],
+        "vol_schedule": [0.042, 0.055, 0.075, 0.048, 0.060, 0.045, 0.044, 0.058, 0.080, 0.050],
         "seed": 201,
     },
     # ── Indices / ETFs ────────────────────────────────────────────────────
     "SPY": {
         "category": "Indices",
-        "n_days": 1260,
-        "ar1_schedule": [0.05, 0.08, 0.03, 0.10, 0.06, 0.05],
-        "ar2_schedule": [0.02, 0.03, 0.01, 0.04, 0.02, 0.02],
-        "mean_schedule": [0.0003, 0.0004, -0.0001, 0.0004, 0.0003, 0.0003],
-        "vol_schedule": [0.010, 0.012, 0.022, 0.011, 0.014, 0.011],
+        "n_days": 2520,
+        "ar1_schedule": [0.05, 0.08, 0.03, 0.10, 0.06, 0.05, 0.06, 0.09, 0.04, 0.07],
+        "ar2_schedule": [0.02, 0.03, 0.01, 0.04, 0.02, 0.02, 0.02, 0.04, 0.01, 0.03],
+        "mean_schedule": [0.0003, 0.0004, -0.0001, 0.0004, 0.0003, 0.0003, 0.0003, 0.0005, -0.0002, 0.0003],
+        "vol_schedule": [0.010, 0.012, 0.022, 0.011, 0.014, 0.011, 0.011, 0.013, 0.024, 0.012],
         "seed": 300,
     },
     "QQQ": {
         "category": "Indices",
-        "n_days": 1260,
-        "ar1_schedule": [0.06, 0.10, 0.04, 0.12, 0.07, 0.06],
-        "ar2_schedule": [0.02, 0.04, 0.01, 0.05, 0.03, 0.02],
-        "mean_schedule": [0.0004, 0.0005, -0.0002, 0.0005, 0.0004, 0.0004],
-        "vol_schedule": [0.013, 0.015, 0.026, 0.014, 0.018, 0.014],
+        "n_days": 2520,
+        "ar1_schedule": [0.06, 0.10, 0.04, 0.12, 0.07, 0.06, 0.07, 0.11, 0.05, 0.08],
+        "ar2_schedule": [0.02, 0.04, 0.01, 0.05, 0.03, 0.02, 0.03, 0.05, 0.01, 0.03],
+        "mean_schedule": [0.0004, 0.0005, -0.0002, 0.0005, 0.0004, 0.0004, 0.0003, 0.0006, -0.0003, 0.0004],
+        "vol_schedule": [0.013, 0.015, 0.026, 0.014, 0.018, 0.014, 0.014, 0.017, 0.028, 0.015],
         "seed": 301,
     },
     # ── Commodities ───────────────────────────────────────────────────────
     "GLD": {
         "category": "Commodities",
-        "n_days": 1260,
-        "ar1_schedule": [0.04, 0.06, 0.02, 0.08, 0.05, 0.04],
-        "ar2_schedule": [0.01, 0.02, 0.005, 0.03, 0.02, 0.01],
-        "mean_schedule": [0.0002, 0.0003, 0.0001, 0.0003, 0.0002, 0.0002],
-        "vol_schedule": [0.009, 0.011, 0.016, 0.010, 0.013, 0.010],
+        "n_days": 2520,
+        "ar1_schedule": [0.04, 0.06, 0.02, 0.08, 0.05, 0.04, 0.05, 0.07, 0.03, 0.06],
+        "ar2_schedule": [0.01, 0.02, 0.005, 0.03, 0.02, 0.01, 0.01, 0.03, 0.01, 0.02],
+        "mean_schedule": [0.0002, 0.0003, 0.0001, 0.0003, 0.0002, 0.0002, 0.0002, 0.0004, 0.0000, 0.0002],
+        "vol_schedule": [0.009, 0.011, 0.016, 0.010, 0.013, 0.010, 0.010, 0.012, 0.018, 0.011],
         "seed": 400,
     },
     # ── Bonds ─────────────────────────────────────────────────────────────
     "TLT": {
         "category": "Bonds",
-        "n_days": 1260,
-        "ar1_schedule": [0.03, 0.05, 0.02, 0.06, 0.04, 0.03],
-        "ar2_schedule": [0.01, 0.02, 0.005, 0.02, 0.01, 0.01],
-        "mean_schedule": [0.0001, 0.0002, 0.0001, 0.0002, 0.0001, 0.0001],
-        "vol_schedule": [0.008, 0.010, 0.015, 0.009, 0.012, 0.009],
+        "n_days": 2520,
+        "ar1_schedule": [0.03, 0.05, 0.02, 0.06, 0.04, 0.03, 0.04, 0.06, 0.02, 0.05],
+        "ar2_schedule": [0.01, 0.02, 0.005, 0.02, 0.01, 0.01, 0.01, 0.02, 0.005, 0.02],
+        "mean_schedule": [0.0001, 0.0002, 0.0001, 0.0002, 0.0001, 0.0001, 0.0001, 0.0002, 0.0000, 0.0001],
+        "vol_schedule": [0.008, 0.010, 0.015, 0.009, 0.012, 0.009, 0.009, 0.011, 0.016, 0.010],
         "seed": 500,
     },
     # ── Forex ─────────────────────────────────────────────────────────────
     "EURUSD": {
         "category": "Forex",
-        "n_days": 1260,
-        "ar1_schedule": [0.03, 0.05, 0.02, 0.07, 0.04, 0.03],
-        "ar2_schedule": [0.01, 0.02, 0.005, 0.03, 0.02, 0.01],
-        "mean_schedule": [0.0000, 0.0001, -0.0001, 0.0001, 0.0000, 0.0000],
-        "vol_schedule": [0.005, 0.006, 0.010, 0.006, 0.007, 0.006],
+        "n_days": 2520,
+        "ar1_schedule": [0.03, 0.05, 0.02, 0.07, 0.04, 0.03, 0.04, 0.06, 0.02, 0.05],
+        "ar2_schedule": [0.01, 0.02, 0.005, 0.03, 0.02, 0.01, 0.01, 0.03, 0.01, 0.02],
+        "mean_schedule": [0.0000, 0.0001, -0.0001, 0.0001, 0.0000, 0.0000, 0.0000, 0.0001, -0.0001, 0.0001],
+        "vol_schedule": [0.005, 0.006, 0.010, 0.006, 0.007, 0.006, 0.005, 0.007, 0.011, 0.006],
         "seed": 600,
     },
 }
@@ -288,6 +288,45 @@ def backtest_single_asset(
                   "not sig."
             print(f"\n  Best: {best_name} → t={best_m.get('hac_t_stat', 0):.2f} ({sig})")
 
+    # ── Out-of-sample validation split ─────────────────────────────────
+    # Split OOS returns at midpoint: first half = "development", second half = "holdout"
+    best_result = results[best_name]
+    oos_mask = best_result.get("oos_mask", pd.Series(False, index=returns.index))
+    oos_returns_full = best_result["returns"][oos_mask]
+    validation = {}
+    if len(oos_returns_full) > 100:
+        mid = len(oos_returns_full) // 2
+        dev_oos = oos_returns_full.iloc[:mid]
+        holdout_oos = oos_returns_full.iloc[mid:]
+
+        for label, segment in [("development", dev_oos), ("holdout", holdout_oos)]:
+            seg_nz = segment[segment != 0]
+            if len(seg_nz) < 20:
+                continue
+            nw = newey_west_tstat(seg_nz)
+            ann_r = seg_nz.mean() * 252
+            ann_v = seg_nz.std() * np.sqrt(252)
+            sharpe = ann_r / ann_v if ann_v > 0 else 0
+            eq_seg = 100_000 * (1 + seg_nz.fillna(0)).cumprod()
+            dd = (eq_seg - eq_seg.cummax()) / eq_seg.cummax()
+            validation[label] = {
+                "n_days": len(seg_nz),
+                "period": f"{seg_nz.index[0].date()} → {seg_nz.index[-1].date()}",
+                "t_stat": nw["t_stat"],
+                "sharpe": sharpe,
+                "total_return": float(eq_seg.iloc[-1] / eq_seg.iloc[0] - 1),
+                "max_dd": float(dd.min()),
+            }
+
+        if verbose and validation:
+            print(f"\n  ── OOS Validation Split ──")
+            for label, v in validation.items():
+                print(f"    {label.upper():>12s}: {v['period']}, "
+                      f"n={v['n_days']}, t={v['t_stat']:.2f}, "
+                      f"Sharpe={v['sharpe']:.2f}, "
+                      f"Return={v['total_return']:.1%}, "
+                      f"MaxDD={v['max_dd']:.1%}")
+
     return {
         "asset": asset_name,
         "category": config["category"],
@@ -299,13 +338,14 @@ def backtest_single_asset(
         "best_metrics": best_m,
         "forecasts": forecasts,
         "forecast_cache": forecast_cache,
+        "validation": validation,
     }
 
 
 def main():
     print("=" * 70)
-    print("Multi-Asset ARIMA Backtest — 10 Assets × 5 Strategies")
-    print("Walk-forward with Newey-West HAC t-statistic")
+    print("Multi-Asset ARIMA Backtest — 10 Assets × 5 Strategies × 10 Years")
+    print("Walk-forward with Newey-West HAC t-statistic + OOS Validation")
     print("=" * 70)
 
     all_results = {}
@@ -360,6 +400,37 @@ def main():
 
     print("=" * 70)
 
+    # ── OOS Validation Summary ──────────────────────────────────────────
+    print("\n" + "=" * 70)
+    print("OUT-OF-SAMPLE VALIDATION (Development vs Holdout)")
+    print("=" * 70)
+    print(f"\n{'Asset':<10s} │ {'Development OOS':^36s} │ {'Holdout OOS (unseen)':^36s}")
+    print(f"{'':10s} │ {'t-stat':>8s} {'Sharpe':>8s} {'Return':>9s} {'Days':>6s}"
+          f" │ {'t-stat':>8s} {'Sharpe':>8s} {'Return':>9s} {'Days':>6s}")
+    print("-" * 90)
+
+    for asset_name, result in all_results.items():
+        val = result.get("validation", {})
+        dev = val.get("development", {})
+        hld = val.get("holdout", {})
+        if dev and hld:
+            print(f"{asset_name:<10s} │ "
+                  f"{dev['t_stat']:>8.2f} {dev['sharpe']:>8.2f} "
+                  f"{dev['total_return']:>8.1%} {dev['n_days']:>6d} │ "
+                  f"{hld['t_stat']:>8.2f} {hld['sharpe']:>8.2f} "
+                  f"{hld['total_return']:>8.1%} {hld['n_days']:>6d}")
+        else:
+            print(f"{asset_name:<10s} │ {'N/A':^36s} │ {'N/A':^36s}")
+
+    # Count how many pass holdout
+    holdout_sig = sum(
+        1 for r in all_results.values()
+        if r.get("validation", {}).get("holdout", {}).get("t_stat", 0) > 1.96
+    )
+    print(f"\nHoldout validation: {holdout_sig}/{len(all_results)} assets "
+          f"maintain significance (t > 1.96) on unseen second half")
+    print("=" * 70)
+
     # Save results
     save_data = {}
     for asset_name, result in all_results.items():
@@ -372,6 +443,7 @@ def main():
             "results": result["results"],
             "best_strategy": result["best_strategy"],
             "best_metrics": result["best_metrics"],
+            "validation": result.get("validation", {}),
         }
 
     save_path = os.path.join(ASSETS_DIR, "multi_asset_results.pkl")
