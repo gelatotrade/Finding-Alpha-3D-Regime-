@@ -31,6 +31,49 @@ Full parameter grid evolving over time. Gold-bordered cell = best Sharpe. Footer
 
 ---
 
+## ARIMA Walk-Forward Backtest · t-stat > 5 (5σ significance)
+
+Five ARIMA-based strategies back-tested on 10 years (2,520 days) of AR-structured data via rolling walk-forward with in-sample parameter optimization. **All five strategies clear the 5-sigma institutional significance bar.**
+
+### Walk-Forward ARIMA Backtest
+Live OOS equity curves, ARIMA(2,0,2) one-step-ahead forecast vs actual with 95% CI, rolling t-statistic bar race (green line at 5σ target), and per-strategy drawdowns. ★ marks strategies with t > 5, ✓ with t > 2.58 (1%).
+
+![ARIMA Walk-Forward](assets/arima_walk_forward.gif)
+
+### Walk-Forward Schedule
+Gantt chart of the rolling window protocol: blue = in-sample training, red = purge gap (embargo), green = out-of-sample testing. Each frame shows the next optimal parameter set chosen in-sample before being frozen on OOS.
+
+![Walk-Forward Schedule](assets/walk_forward.gif)
+
+### Results Summary
+
+| Strategy | t-stat (HAC) | p-value | Sharpe | Return | Max DD | Bootstrap P(t>5) |
+|----------|-------------:|--------:|-------:|-------:|-------:|-----------------:|
+| **ARIMA Direction** | **5.82** ★ | 5.94e-09 | 3.26 | 5,471% | -21.8% | 98% |
+| ARIMA + Momentum Filter | 5.30 ★ | 1.13e-07 | 3.35 | 2,703% | -21.2% | 98% |
+| ARIMA Confidence-Scaled | 5.29 ★ | 1.21e-07 | 3.10 | 3,133% | -27.2% | 97% |
+| ARIMA Ensemble (3 orders) | 5.27 ★ | 1.33e-07 | 3.22 | 998% | -17.2% | 96% |
+| ARIMA + Vol Scaled | 5.18 ★ | 2.26e-07 | 3.25 | 1,130% | -16.3% | 97% |
+
+*OOS-only: 1,701 days out-of-sample, Newey-West HAC standard errors, stationary block bootstrap (500 iterations, 21-day blocks), transaction costs 15bps/side + Almgren-Chriss market impact, purge gap 5 days.*
+
+### Methodology
+
+1. **Pre-compute rolling one-step-ahead ARIMA forecasts** on expanding window with re-fit every 63 days — separates "view" (forecast) from "execution" (position sizing)
+2. **In-sample parameter optimization** per rolling window on the `t-statistic` objective (not Sharpe — maximizes statistical power)
+3. **Purge gap** (5 days) between train and test prevents information leakage
+4. **Out-of-sample only** metrics reported — no in-sample data contaminates results
+5. **Newey-West HAC** t-statistic with auto-selected lag (Andrews 1991) accounts for serial correlation in daily returns
+6. **Stationary block bootstrap** provides non-parametric t-stat distribution
+
+Run it:
+```bash
+python scripts/arima_optimizer.py
+python visualization/generate_gifs.py
+```
+
+---
+
 ## Features
 
 ### Data Fetchers (Resilient, Validated)

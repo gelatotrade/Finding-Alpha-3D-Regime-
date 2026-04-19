@@ -10,3 +10,4 @@ venv/
 *.pkl
 .ipynb_checkpoints/
 *.html
+assets/*.pkl
