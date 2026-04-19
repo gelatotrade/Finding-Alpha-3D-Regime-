@@ -213,41 +213,82 @@ class ArimaForecaster:
         At each t in [train_window, len(series)]:
             - Use series[t - train_window : t]  (no future data)
             - Forecast series[t]
-            - Re-estimate order every `refit_every` steps (expensive)
+            - Re-fit model every `refit_every` steps
+            - Between re-fits, use cached params for fast manual prediction
         """
+        sm = _get_statsmodels()
         series = series.dropna()
         if len(series) < train_window + 1:
             return pd.DataFrame()
 
-        # Select initial order
+        fixed_order = order is not None
         if order is None:
             order = self.select_order(series.iloc[:train_window])
 
         records = []
         current_order = order
+        cached_params = None
+        cached_sigma2 = None
+
         for t in range(train_window, len(series)):
-            # Re-select order periodically
-            if (t - train_window) % refit_every == 0 and t > train_window:
+            # Re-select order periodically (only if no fixed order given)
+            if not fixed_order and (t - train_window) % refit_every == 0 and t > train_window:
                 try:
                     current_order = self.select_order(series.iloc[t - train_window:t])
                 except Exception:
-                    pass  # keep previous order
+                    pass
 
+            # Full re-fit at refit intervals
+            need_refit = (t - train_window) % refit_every == 0 or cached_params is None
             train = series.iloc[t - train_window:t]
-            fc = self.forecast_one_step(train, order=current_order)
-            if fc is None:
-                continue
-            actual = series.iloc[t] if t < len(series) else np.nan
 
+            if need_refit:
+                try:
+                    model = sm["ARIMA"](train, order=current_order)
+                    fitted = model.fit()
+                    forecast_result = fitted.get_forecast(steps=1)
+                    mean = float(forecast_result.predicted_mean.iloc[0])
+                    std = float(forecast_result.se_mean.iloc[0])
+                    ci = forecast_result.conf_int(alpha=0.05)
+                    lower = float(ci.iloc[0, 0])
+                    upper = float(ci.iloc[0, 1])
+                    cached_params = fitted.params
+                    aic = float(fitted.aic)
+                except Exception:
+                    continue
+            else:
+                # Fast manual prediction using cached params
+                try:
+                    p, d, q = current_order
+                    vals = train.values
+                    if d > 0:
+                        vals = np.diff(vals, n=d)
+
+                    const = float(cached_params.get("const", 0.0))
+                    pred = const
+                    for lag in range(1, p + 1):
+                        key = f"ar.L{lag}"
+                        if key in cached_params.index and len(vals) > lag:
+                            pred += float(cached_params[key]) * vals[-lag]
+                    mean = float(pred)
+                    s2 = cached_params.get("sigma2", None)
+                    std = float(np.sqrt(abs(float(s2)))) if s2 is not None else 0.01
+                    lower = mean - 1.96 * std
+                    upper = mean + 1.96 * std
+                    aic = 0.0
+                except Exception:
+                    continue
+
+            actual = series.iloc[t] if t < len(series) else np.nan
             records.append({
                 "timestamp": series.index[t],
-                "forecast_mean": fc.mean,
-                "forecast_std": fc.std,
-                "forecast_lower": fc.confidence_lower,
-                "forecast_upper": fc.confidence_upper,
+                "forecast_mean": mean,
+                "forecast_std": max(std, 1e-10),
+                "forecast_lower": lower,
+                "forecast_upper": upper,
                 "actual": actual,
                 "order": str(current_order),
-                "aic": fc.aic,
+                "aic": aic,
             })
 
         df = pd.DataFrame(records)

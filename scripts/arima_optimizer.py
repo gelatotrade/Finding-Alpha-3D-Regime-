@@ -177,6 +177,21 @@ def strategy_momentum_filter(
     return pd.Series(aligned, index=direction.index)
 
 
+def strategy_contrarian(
+    forecasts: pd.DataFrame, returns: pd.Series,
+    threshold_std: float = 0.3, target_vol: float = 0.15,
+    vol_lookback: int = 21,
+) -> pd.Series:
+    """
+    Contrarian ARIMA: invert the direction signal with vol targeting.
+    Exploits mean-reversion when ARIMA systematically overshoots.
+    """
+    direction = -strategy_direction(forecasts, threshold_std)
+    realized_vol = returns.rolling(vol_lookback).std() * np.sqrt(252)
+    scalar = (target_vol / realized_vol.replace(0, np.nan)).clip(0.2, 2.5)
+    return (direction * scalar.reindex(direction.index)).fillna(0)
+
+
 # ── Simulate returns with costs ──────────────────────────────────────────
 
 def simulate_pnl(
@@ -230,13 +245,18 @@ def walk_forward_optimize(
     combos = list(product(*param_values))
 
     # Pre-compute signals for ALL parameter combos once (fast since forecasts cached)
+    needs_returns = {"strategy_direction_vol_scaled", "strategy_contrarian"}
+    needs_close = {"strategy_momentum_filter"}
     all_signals = {}
     for combo in combos:
         params = dict(zip(param_names, combo))
         try:
-            sig = strategy_fn(fcst, **params) if strategy_fn.__name__ != "strategy_direction_vol_scaled" and strategy_fn.__name__ != "strategy_momentum_filter" \
-                else (strategy_fn(fcst, returns, **params) if strategy_fn.__name__ == "strategy_direction_vol_scaled"
-                      else strategy_fn(fcst, close, **params))
+            if strategy_fn.__name__ in needs_returns:
+                sig = strategy_fn(fcst, returns, **params)
+            elif strategy_fn.__name__ in needs_close:
+                sig = strategy_fn(fcst, close, **params)
+            else:
+                sig = strategy_fn(fcst, **params)
             all_signals[combo] = sig
         except Exception:
             continue
