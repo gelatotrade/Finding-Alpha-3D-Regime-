@@ -643,9 +643,325 @@ def gif_parameter_heatmap(output_path=None, fps=3):
     return output_path
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# GIF 6: ARIMA Walk-Forward Backtest (multi-panel)
+# ═══════════════════════════════════════════════════════════════════════
+
+def gif_arima_backtest(output_path=None, fps=12):
+    """
+    Animated ARIMA walk-forward: OOS equity curves with t-stat and
+    forecast vs actual overlay. Loaded from pre-computed results.
+    """
+    import pickle
+    output_path = output_path or os.path.join(ASSETS_DIR, "arima_walk_forward.gif")
+    results_path = os.path.join(ASSETS_DIR, "arima_results.pkl")
+
+    if not os.path.exists(results_path):
+        print(f"Missing {results_path}. Run: python scripts/arima_optimizer.py")
+        return None
+
+    with open(results_path, "rb") as f:
+        data = pickle.load(f)
+
+    prices = data["prices"]
+    returns = data["returns"]
+    forecasts = data["forecasts"]
+    results = data["results"]
+
+    # Sort by t-stat descending
+    results = sorted(results,
+                     key=lambda r: r["metrics"].get("hac_t_stat", -999),
+                     reverse=True)
+
+    colors = ["#3fb950", "#58a6ff", "#bc8cff", "#f0883e", "#f85149"]
+
+    fig, axes = plt.subplots(2, 2, figsize=(13, 8), dpi=100,
+                             gridspec_kw={"height_ratios": [1.3, 1]})
+    fig.patch.set_facecolor("#0d1117")
+    (ax_eq, ax_fc), (ax_tstat, ax_drawdown) = axes
+
+    # Equity curves and masks
+    equity_curves = {r["name"]: r["equity"] for r in results}
+    oos_masks = {r["name"]: r.get("oos_mask", pd.Series(False, index=r["equity"].index))
+                 for r in results}
+
+    n_frames = 80
+    dates = prices.index
+    min_progress_idx = int(len(dates) * 0.25)
+
+    def update(frame_idx):
+        progress_frac = (frame_idx + 1) / n_frames
+        progress = int(min_progress_idx + (len(dates) - min_progress_idx) * progress_frac)
+        progress = min(progress, len(dates) - 1)
+        current_date = dates[progress]
+
+        # ── Panel 1: OOS Equity Curves ──────────────────────────────
+        ax_eq.clear()
+        ax_eq.set_facecolor("#161b22")
+
+        bh_equity = 100_000 * (prices["close"] / prices["close"].iloc[0])
+        ax_eq.plot(bh_equity.index[:progress], bh_equity.values[:progress],
+                   color="#8b949e", linewidth=1.3, linestyle="--",
+                   label="Buy & Hold", alpha=0.6)
+
+        for i, (name, eq) in enumerate(equity_curves.items()):
+            m = results[i]["metrics"]
+            t = m.get("hac_t_stat", 0)
+            marker = "★" if abs(t) > 5 else "✓" if abs(t) > 2.576 else "·"
+            label = f"{marker} {name}  t={t:.2f}"
+            ax_eq.plot(eq.index[:progress], eq.values[:progress],
+                       color=colors[i], linewidth=2.2, label=label)
+
+        ax_eq.axhline(100_000, color="#30363d", linestyle=":", alpha=0.5)
+        ax_eq.set_title(
+            f"ARIMA Walk-Forward OOS Equity  ·  {current_date.date()}",
+            color="#f0f6fc", fontweight="bold", fontsize=12,
+        )
+        ax_eq.set_ylabel("Portfolio ($)", color="#c9d1d9", fontsize=9)
+        ax_eq.grid(True, alpha=0.2, color="#30363d")
+        ax_eq.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"${x/1000:.0f}k"))
+        ax_eq.legend(loc="upper left", fontsize=8.5, facecolor="#161b22",
+                     edgecolor="#30363d", labelcolor="#c9d1d9")
+        ax_eq.tick_params(colors="#8b949e", labelsize=8)
+        ax_eq.set_xlim(dates[0], dates[-1])
+        for s in ax_eq.spines.values():
+            s.set_edgecolor("#30363d")
+
+        # ── Panel 2: ARIMA Forecast vs Actual ──────────────────────
+        ax_fc.clear()
+        ax_fc.set_facecolor("#161b22")
+
+        # Recent window of forecasts vs actuals
+        window = 80
+        end = min(progress, len(forecasts))
+        start_w = max(0, end - window)
+        if start_w < end:
+            fc_window = forecasts.iloc[start_w:end]
+            actual = fc_window["actual"] * 100
+            mean = fc_window["forecast_mean"] * 100
+            lower = fc_window["forecast_lower"] * 100
+            upper = fc_window["forecast_upper"] * 100
+
+            ax_fc.fill_between(fc_window.index, lower, upper,
+                               alpha=0.25, color="#58a6ff",
+                               label="95% CI")
+            ax_fc.plot(fc_window.index, mean, color="#58a6ff",
+                       linewidth=1.8, label="Forecast")
+            ax_fc.plot(fc_window.index, actual, color="#f85149",
+                       linewidth=1.2, alpha=0.8, label="Actual")
+            ax_fc.axhline(0, color="#30363d", linestyle="-", alpha=0.5)
+
+        ax_fc.set_title(
+            f"ARIMA(2,0,2) One-Step Forecast vs Actual (last {window} days)",
+            color="#f0f6fc", fontweight="bold", fontsize=11,
+        )
+        ax_fc.set_ylabel("Return (%)", color="#c9d1d9", fontsize=9)
+        ax_fc.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:.1f}%"))
+        ax_fc.legend(loc="upper right", fontsize=8, facecolor="#161b22",
+                     edgecolor="#30363d", labelcolor="#c9d1d9")
+        ax_fc.grid(True, alpha=0.2, color="#30363d")
+        ax_fc.tick_params(colors="#8b949e", labelsize=8)
+        for s in ax_fc.spines.values():
+            s.set_edgecolor("#30363d")
+
+        # ── Panel 3: t-statistic bar race ──────────────────────────
+        ax_tstat.clear()
+        ax_tstat.set_facecolor("#161b22")
+
+        names = [r["name"] for r in results]
+        t_stats_current = []
+        for i, r in enumerate(results):
+            eq = equity_curves[r["name"]]
+            oos_ret = eq.iloc[:progress].pct_change().dropna()
+            oos_ret = oos_ret[oos_ret != 0]
+            if len(oos_ret) < 20:
+                t_stats_current.append(0)
+            else:
+                mean = oos_ret.mean()
+                std = oos_ret.std()
+                t = (mean / std) * np.sqrt(len(oos_ret)) if std > 0 else 0
+                t_stats_current.append(t)
+
+        bars = ax_tstat.barh(names, t_stats_current,
+                              color=[colors[i] for i in range(len(names))],
+                              edgecolor="#30363d", linewidth=1)
+        ax_tstat.axvline(0, color="#30363d", linewidth=1)
+        ax_tstat.axvline(2.576, color="#d29922", linestyle="--",
+                          linewidth=1.2, alpha=0.8, label="1% sig")
+        ax_tstat.axvline(5.0, color="#3fb950", linestyle="--",
+                          linewidth=1.5, alpha=0.9, label="5σ target")
+
+        for bar, t in zip(bars, t_stats_current):
+            ax_tstat.text(t + (0.1 if t >= 0 else -0.1),
+                           bar.get_y() + bar.get_height() / 2,
+                           f"{t:.2f}",
+                           ha="left" if t >= 0 else "right",
+                           va="center", color="#c9d1d9",
+                           fontsize=9, fontweight="bold")
+
+        ax_tstat.set_title("Live t-statistic (rolling)",
+                            color="#f0f6fc", fontweight="bold", fontsize=11)
+        ax_tstat.set_xlabel("t-statistic", color="#c9d1d9", fontsize=9)
+        max_t = max(max(t_stats_current, default=5), 6)
+        min_t = min(min(t_stats_current, default=-1), -1)
+        ax_tstat.set_xlim(min_t - 0.5, max_t + 0.5)
+        ax_tstat.legend(loc="lower right", fontsize=8, facecolor="#161b22",
+                         edgecolor="#30363d", labelcolor="#c9d1d9")
+        ax_tstat.grid(True, alpha=0.2, color="#30363d", axis="x")
+        ax_tstat.tick_params(colors="#8b949e", labelsize=8)
+        for s in ax_tstat.spines.values():
+            s.set_edgecolor("#30363d")
+
+        # ── Panel 4: Drawdown ───────────────────────────────────────
+        ax_drawdown.clear()
+        ax_drawdown.set_facecolor("#161b22")
+
+        for i, (name, eq) in enumerate(equity_curves.items()):
+            eq_slice = eq.iloc[:progress]
+            if len(eq_slice) > 1:
+                dd = (eq_slice - eq_slice.cummax()) / eq_slice.cummax() * 100
+                ax_drawdown.fill_between(dd.index, dd.values, 0,
+                                          alpha=0.3, color=colors[i])
+                ax_drawdown.plot(dd.index, dd.values,
+                                  color=colors[i], linewidth=1.2)
+
+        ax_drawdown.axhline(0, color="#30363d", linewidth=1)
+        ax_drawdown.set_title("Drawdown",
+                               color="#f0f6fc", fontweight="bold", fontsize=11)
+        ax_drawdown.set_ylabel("Drawdown (%)", color="#c9d1d9", fontsize=9)
+        ax_drawdown.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:.0f}%"))
+        ax_drawdown.set_xlim(dates[0], dates[-1])
+        ax_drawdown.grid(True, alpha=0.2, color="#30363d")
+        ax_drawdown.tick_params(colors="#8b949e", labelsize=8)
+        for s in ax_drawdown.spines.values():
+            s.set_edgecolor("#30363d")
+
+        fig.tight_layout()
+        return []
+
+    anim = animation.FuncAnimation(
+        fig, update, frames=n_frames, interval=1000 // fps, blit=False, repeat=True,
+    )
+    anim.save(output_path, writer="pillow", fps=fps)
+    plt.close(fig)
+    print(f"✓ {output_path}")
+    return output_path
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# GIF 7: Walk-Forward Schedule (train/test gantt chart)
+# ═══════════════════════════════════════════════════════════════════════
+
+def gif_walk_forward_schedule(output_path=None, fps=4):
+    """Animated Gantt chart showing train/purge/test windows rolling forward."""
+    import pickle
+    output_path = output_path or os.path.join(ASSETS_DIR, "walk_forward.gif")
+    results_path = os.path.join(ASSETS_DIR, "arima_results.pkl")
+
+    if not os.path.exists(results_path):
+        return None
+
+    with open(results_path, "rb") as f:
+        data = pickle.load(f)
+
+    prices = data["prices"]
+    results = data["results"]
+    # Use best result's param history
+    best = max(results, key=lambda r: r["metrics"].get("hac_t_stat", 0))
+    param_history = best.get("param_history", [])
+
+    if not param_history:
+        return None
+
+    fig, ax = plt.subplots(figsize=(13, 5), dpi=100)
+    fig.patch.set_facecolor("#0d1117")
+    ax.set_facecolor("#161b22")
+
+    n_windows = len(param_history)
+
+    def update(frame_idx):
+        ax.clear()
+        ax.set_facecolor("#161b22")
+        window_idx = min(frame_idx, n_windows - 1)
+
+        # Draw price in background
+        close = prices["close"]
+        price_norm = (close - close.min()) / (close.max() - close.min()) * 0.6
+        ax.plot(close.index, price_norm - 2.5, color="#8b949e",
+                linewidth=0.9, alpha=0.5, label="Price (normalized)")
+
+        # Draw all windows up to current
+        for i, p in enumerate(param_history[:window_idx + 1]):
+            alpha = 0.9 if i == window_idx else 0.35
+            # Train
+            ax.barh(0, (p["train_end"] - p["train_start"]).days,
+                    left=p["train_start"], height=0.55,
+                    color="#58a6ff", alpha=alpha, edgecolor="#30363d")
+            # Purge gap
+            purge_width = (p["test_start"] - p["train_end"]).days
+            if purge_width > 0:
+                ax.barh(0, purge_width, left=p["train_end"],
+                        height=0.55, color="#f85149", alpha=alpha * 0.7,
+                        edgecolor="#30363d")
+            # Test
+            ax.barh(0, (p["test_end"] - p["test_start"]).days,
+                    left=p["test_start"], height=0.55,
+                    color="#3fb950", alpha=alpha, edgecolor="#30363d")
+
+        # Current window highlighted with arrow + annotation
+        p = param_history[window_idx]
+        train_mid = p["train_start"] + (p["train_end"] - p["train_start"]) / 2
+        test_mid = p["test_start"] + (p["test_end"] - p["test_start"]) / 2
+
+        ax.annotate("TRAIN", xy=(train_mid, 0.45), ha="center",
+                    color="#f0f6fc", fontsize=10, fontweight="bold")
+        ax.annotate("OOS", xy=(test_mid, 0.45), ha="center",
+                    color="#f0f6fc", fontsize=10, fontweight="bold")
+
+        # Legend patches
+        from matplotlib.patches import Patch
+        legend_elements = [
+            Patch(facecolor="#58a6ff", label="In-sample (train)"),
+            Patch(facecolor="#f85149", alpha=0.7, label="Purge gap"),
+            Patch(facecolor="#3fb950", label="Out-of-sample (test)"),
+        ]
+
+        params_str = ", ".join(f"{k}={v}" for k, v in p["params"].items())
+        ax.set_title(
+            f"Walk-Forward Window {window_idx+1}/{n_windows}  ·  "
+            f"IS score: {p['is_score']:.2f}\n"
+            f"Optimal params: {params_str}",
+            color="#f0f6fc", fontweight="bold", fontsize=12, pad=10,
+        )
+        ax.set_ylim(-3, 1.2)
+        ax.set_yticks([])
+        ax.set_xlim(prices.index[0], prices.index[-1])
+        ax.legend(handles=legend_elements, loc="lower left",
+                  fontsize=9, facecolor="#161b22",
+                  edgecolor="#30363d", labelcolor="#c9d1d9")
+        ax.grid(True, alpha=0.15, color="#30363d", axis="x")
+        ax.tick_params(colors="#8b949e", labelsize=8)
+        for s in ax.spines.values():
+            s.set_edgecolor("#30363d")
+
+        fig.tight_layout()
+        return []
+
+    anim = animation.FuncAnimation(
+        fig, update, frames=n_windows, interval=1000 // fps,
+        blit=False, repeat=True,
+    )
+    anim.save(output_path, writer="pillow", fps=fps)
+    plt.close(fig)
+    print(f"✓ {output_path}")
+    return output_path
+
+
 if __name__ == "__main__":
     gif_pnl_surface_animated()
     gif_equity_curves()
     gif_risk_dashboard()
     gif_regime_detection()
     gif_parameter_heatmap()
+    gif_arima_backtest()
+    gif_walk_forward_schedule()
