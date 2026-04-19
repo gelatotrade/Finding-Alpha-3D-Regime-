@@ -181,66 +181,87 @@ def gif_pnl_surface_animated(output_path=None, fps=2):
 # ═══════════════════════════════════════════════════════════════════════
 
 def gif_equity_curves(output_path=None, fps=20):
-    """Animated equity curves progressing through time."""
+    """
+    Animated equity curves for Contrarian ARIMA strategy on top-performing
+    assets. Uses results from multi_asset_backtest.py.
+    """
+    import pickle
     output_path = output_path or os.path.join(ASSETS_DIR, "equity_curves.gif")
-    prices = _make_synthetic_prices()
-    engine = BacktestEngine()
+    pkl_path = os.path.join(ASSETS_DIR, "multi_asset_results.pkl")
 
-    strategies = {
-        "Momentum 10/30": Strategy("Momentum", momentum_crossover(10, 30)),
-        "Bollinger 20/2": Strategy("Bollinger", mean_reversion_bollinger(20, 2.0)),
-        "Regime Adaptive": Strategy("Regime", regime_adaptive()),
-    }
-    colors = {"Momentum 10/30": "#58a6ff", "Bollinger 20/2": "#f85149",
-              "Regime Adaptive": "#3fb950"}
+    if not os.path.exists(pkl_path):
+        print(f"  Skipping equity_curves GIF (no {pkl_path})")
+        return None
 
+    with open(pkl_path, "rb") as f:
+        all_results = pickle.load(f)
+
+    # Pick top 5 assets by t-stat for display
+    scored = []
+    for asset, r in all_results.items():
+        m = r.get("best_metrics", {})
+        if m:
+            scored.append((asset, m.get("hac_t_stat", 0), r))
+    scored.sort(key=lambda x: -x[1])
+    top = scored[:5]
+
+    colors = ["#58a6ff", "#f0883e", "#3fb950", "#d2a8ff", "#f85149"]
+
+    # Extract equity curves (best strategy per asset, normalized to 100k)
     equity_curves = {}
-    for name, strat in strategies.items():
-        result = engine.run(prices, strat)
-        equity_curves[name] = result.equity_curve
+    for (asset, tstat, r), color in zip(top, colors):
+        best_name = r["best_strategy"]
+        best_result = r["results"][best_name]
+        eq = best_result.get("equity")
+        if eq is None or len(eq) == 0:
+            continue
+        # Normalize to 100k starting value
+        eq_norm = 100_000 * eq / eq.iloc[0]
+        label = f"{asset} · {best_name} (t={tstat:.2f})"
+        equity_curves[label] = (eq_norm, color)
 
-    fig, ax = plt.subplots(figsize=(10, 5.5), dpi=100)
-    n_frames = 80
-    dates = prices.index
+    if not equity_curves:
+        print(f"  Skipping equity_curves GIF (no equity data)")
+        return None
+
+    # Use the union date range
+    first_eq = list(equity_curves.values())[0][0]
+    dates = first_eq.index
+
+    fig, ax = plt.subplots(figsize=(11, 6), dpi=100)
+    fig.patch.set_facecolor("#0d1117")
+    n_frames = 60
 
     def update(frame_idx):
         ax.clear()
+        ax.set_facecolor("#161b22")
         progress = int(len(dates) * (frame_idx + 1) / n_frames)
         progress = max(progress, 5)
 
-        # Buy-and-hold benchmark
-        bh = 100_000 * (prices["close"] / prices["close"].iloc[0])
-        ax.plot(bh.index[:progress], bh.values[:progress],
-                color="#8b949e", linestyle="--", linewidth=1.5,
-                label="Buy & Hold", alpha=0.7)
-
         max_val = 100_000
-        for name, eq in equity_curves.items():
+        for label, (eq, color) in equity_curves.items():
             ax.plot(eq.index[:progress], eq.values[:progress],
-                    color=colors[name], linewidth=2.2, label=name)
-            # Add endpoint marker
+                    color=color, linewidth=2.0, label=label, alpha=0.95)
             if progress > 0:
                 ax.scatter([eq.index[progress-1]], [eq.values[progress-1]],
-                           color=colors[name], s=60, zorder=5,
+                           color=color, s=45, zorder=5,
                            edgecolor="white", linewidths=1)
-            max_val = max(max_val, eq.values[:progress].max())
+            max_val = max(max_val, float(np.max(eq.values[:progress])))
 
-        ax.axhline(100_000, color="#30363d", linestyle=":", linewidth=1, alpha=0.5)
+        ax.axhline(100_000, color="#30363d", linestyle=":", linewidth=1, alpha=0.6)
         ax.set_xlabel("Date", color="#c9d1d9")
-        ax.set_ylabel("Portfolio Value ($)", color="#c9d1d9")
-        ax.set_title("Strategy Equity Curves Evolution",
+        ax.set_ylabel("Portfolio Value", color="#c9d1d9")
+        ax.set_title("Contrarian ARIMA · Top 5 Assets (OOS Walk-Forward)",
                      color="#f0f6fc", fontsize=13, fontweight="bold", pad=12)
         ax.set_xlim(dates[0], dates[-1])
-        ax.set_ylim(70_000, max(max_val * 1.05, 110_000))
-        ax.grid(True, alpha=0.3, color="#30363d")
-        ax.legend(loc="upper left", facecolor="#161b22",
+        ax.set_ylim(90_000, max(max_val * 1.05, 150_000))
+        ax.grid(True, alpha=0.25, color="#30363d")
+        ax.legend(loc="upper left", fontsize=8, facecolor="#161b22",
                   edgecolor="#30363d", labelcolor="#c9d1d9")
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-
-        # Format y-axis as dollars
+        for s in ax.spines.values():
+            s.set_edgecolor("#30363d")
+        ax.tick_params(colors="#8b949e")
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"${x/1000:.0f}k"))
-
         return []
 
     anim = animation.FuncAnimation(
@@ -248,7 +269,7 @@ def gif_equity_curves(output_path=None, fps=20):
     )
     anim.save(output_path, writer="pillow", fps=fps)
     plt.close(fig)
-    print(f"✓ {output_path}")
+    print(f"  {output_path}")
     return output_path
 
 

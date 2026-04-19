@@ -10,7 +10,7 @@ How strategy performance evolves across parameter space (fast/slow MA) through r
 ![3D PnL Surface](assets/pnl_surface_3d.gif)
 
 ### Strategy Equity Curves
-Side-by-side equity progression for Momentum, Bollinger Mean-Reversion, and Regime-Adaptive strategies vs. buy-and-hold — including realistic transaction costs and Almgren-Chriss market impact.
+Live equity progression for Contrarian ARIMA on the top-5 assets by t-statistic (SPY, TLT, QQQ, BTC, TSLA) — fully out-of-sample walk-forward with 15bps/side costs and Almgren-Chriss market impact.
 
 ![Equity Curves](assets/equity_curves.gif)
 
