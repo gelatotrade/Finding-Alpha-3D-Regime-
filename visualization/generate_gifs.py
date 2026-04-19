@@ -957,6 +957,204 @@ def gif_walk_forward_schedule(output_path=None, fps=4):
     return output_path
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# GIF 8: Multi-Asset Cross-Category Backtest
+# ═══════════════════════════════════════════════════════════════════════
+
+def gif_multi_asset_backtest(
+    output_path: str = os.path.join(ASSETS_DIR, "multi_asset_backtest.gif"),
+    fps: int = 2,
+):
+    """
+    Animated 4-panel GIF showing cross-asset ARIMA backtest results.
+    Panel 1: Equity curves (best strategy per asset, revealed one by one)
+    Panel 2: t-statistic bar chart (animated reveal)
+    Panel 3: Category summary radar
+    Panel 4: Drawdown comparison
+    """
+    import pickle
+
+    pkl_path = os.path.join(ASSETS_DIR, "multi_asset_results.pkl")
+    if not os.path.exists(pkl_path):
+        print(f"  Skipping multi-asset GIF (no {pkl_path})")
+        return None
+
+    with open(pkl_path, "rb") as f:
+        all_results = pickle.load(f)
+
+    assets = list(all_results.keys())
+    n_assets = len(assets)
+
+    category_colors = {
+        "Stocks": "#58a6ff",
+        "Crypto": "#f0883e",
+        "Indices": "#3fb950",
+        "Commodities": "#d2a8ff",
+        "Bonds": "#f85149",
+        "Forex": "#79c0ff",
+    }
+    asset_colors = {a: category_colors.get(all_results[a]["category"], "#8b949e")
+                    for a in assets}
+
+    # Pre-compute equity curves for best strategy per asset
+    equities = {}
+    for asset in assets:
+        r = all_results[asset]
+        best_name = r["best_strategy"]
+        best_result = r["results"][best_name]
+        eq = best_result.get("equity", None)
+        if eq is not None:
+            equities[asset] = eq / eq.iloc[0] * 100  # normalize to 100
+
+    # Build frames: reveal assets one at a time
+    n_frames = n_assets + 6  # reveal + hold summary
+    fig, axes = plt.subplots(2, 2, figsize=(14, 9), dpi=85)
+    fig.patch.set_facecolor("#0d1117")
+
+    def update(frame_idx):
+        for ax in axes.flat:
+            ax.clear()
+            ax.set_facecolor("#161b22")
+
+        reveal = min(frame_idx + 1, n_assets)
+        shown_assets = assets[:reveal]
+
+        # ── Panel 1: Equity curves ──────────────────────────────────
+        ax1 = axes[0, 0]
+        for asset in shown_assets:
+            if asset in equities:
+                eq = equities[asset]
+                ax1.plot(eq.index, eq.values, color=asset_colors[asset],
+                         linewidth=1.3, alpha=0.85, label=asset)
+        ax1.axhline(100, color="#8b949e", linestyle="--", alpha=0.4, linewidth=0.8)
+        ax1.set_title("Equity Curves (Best Strategy per Asset)",
+                       color="#f0f6fc", fontweight="bold", fontsize=10)
+        ax1.set_ylabel("Equity (indexed=100)", color="#c9d1d9", fontsize=9)
+        if shown_assets:
+            ax1.legend(loc="upper right", fontsize=7, ncol=2,
+                       facecolor="#161b22", edgecolor="#30363d",
+                       labelcolor="#c9d1d9")
+        ax1.grid(True, alpha=0.15)
+
+        # ── Panel 2: t-stat bar chart ───────────────────────────────
+        ax2 = axes[0, 1]
+        t_stats = []
+        bar_colors = []
+        for asset in shown_assets:
+            m = all_results[asset]["best_metrics"]
+            t = m.get("hac_t_stat", 0) if m else 0
+            t_stats.append(t)
+            bar_colors.append(asset_colors[asset])
+
+        y_pos = range(len(shown_assets))
+        bars = ax2.barh(y_pos, t_stats, color=bar_colors, alpha=0.85,
+                        edgecolor="#30363d", height=0.6)
+
+        # Significance lines
+        ax2.axvline(-1.96, color="#d29922", linestyle="--", alpha=0.5, linewidth=0.8)
+        ax2.axvline(-2.576, color="#f85149", linestyle="--", alpha=0.5, linewidth=0.8)
+        ax2.axvline(0, color="#8b949e", linestyle="-", alpha=0.3, linewidth=0.8)
+        if any(abs(t) > 4 for t in t_stats):
+            ax2.axvline(-5.0, color="#f85149", linestyle=":", alpha=0.5, linewidth=0.8)
+
+        ax2.set_yticks(y_pos)
+        ax2.set_yticklabels(shown_assets, fontsize=8)
+        ax2.set_title("HAC t-statistic (Best Strategy)",
+                       color="#f0f6fc", fontweight="bold", fontsize=10)
+        ax2.set_xlabel("t-stat", color="#c9d1d9", fontsize=9)
+
+        # Annotate significance
+        for i, t in enumerate(t_stats):
+            sig = "5sig" if abs(t) > 5 else "1%" if abs(t) > 2.576 else \
+                  "5%" if abs(t) > 1.96 else "n.s."
+            color = "#f85149" if abs(t) > 2.576 else "#d29922" if abs(t) > 1.96 else "#8b949e"
+            ax2.text(t - 0.15 if t < 0 else t + 0.1, i, f" {sig}",
+                     va="center", fontsize=7, color=color, fontweight="bold")
+        ax2.grid(True, alpha=0.15, axis="x")
+
+        # ── Panel 3: Category summary ──────────────────────────────
+        ax3 = axes[1, 0]
+        shown_cats = {}
+        for asset in shown_assets:
+            cat = all_results[asset]["category"]
+            m = all_results[asset]["best_metrics"]
+            if not m:
+                continue
+            if cat not in shown_cats:
+                shown_cats[cat] = {"t_stats": [], "sharpes": [], "returns": []}
+            shown_cats[cat]["t_stats"].append(m.get("hac_t_stat", 0))
+            shown_cats[cat]["sharpes"].append(m.get("oos_sharpe", 0))
+            shown_cats[cat]["returns"].append(m.get("total_return", 0))
+
+        cats = list(shown_cats.keys())
+        if cats:
+            x = range(len(cats))
+            avg_t = [np.mean(shown_cats[c]["t_stats"]) for c in cats]
+            avg_s = [np.mean(shown_cats[c]["sharpes"]) for c in cats]
+            cat_cols = [category_colors.get(c, "#8b949e") for c in cats]
+
+            w = 0.35
+            ax3.bar([i - w/2 for i in x], avg_t, w, label="Avg t-stat",
+                    color=cat_cols, alpha=0.7, edgecolor="#30363d")
+            ax3.bar([i + w/2 for i in x], avg_s, w, label="Avg Sharpe",
+                    color=cat_cols, alpha=0.4, edgecolor="#30363d",
+                    hatch="//")
+            ax3.set_xticks(list(x))
+            ax3.set_xticklabels(cats, fontsize=8, rotation=15)
+            ax3.axhline(0, color="#8b949e", linestyle="-", alpha=0.3, linewidth=0.8)
+            ax3.legend(loc="lower left", fontsize=7,
+                       facecolor="#161b22", edgecolor="#30363d",
+                       labelcolor="#c9d1d9")
+        ax3.set_title("Category Averages",
+                       color="#f0f6fc", fontweight="bold", fontsize=10)
+        ax3.grid(True, alpha=0.15, axis="y")
+
+        # ── Panel 4: Drawdown comparison ────────────────────────────
+        ax4 = axes[1, 1]
+        for asset in shown_assets:
+            if asset in equities:
+                eq = equities[asset]
+                running_max = eq.cummax()
+                dd = (eq - running_max) / running_max * 100
+                ax4.plot(dd.index, dd.values, color=asset_colors[asset],
+                         linewidth=1.0, alpha=0.75, label=asset)
+
+        ax4.axhline(-10, color="#d29922", linestyle="--", alpha=0.4, linewidth=0.8)
+        ax4.axhline(-50, color="#f85149", linestyle="--", alpha=0.4, linewidth=0.8)
+        ax4.set_title("Drawdowns (%)",
+                       color="#f0f6fc", fontweight="bold", fontsize=10)
+        ax4.set_ylabel("Drawdown %", color="#c9d1d9", fontsize=9)
+        if shown_assets:
+            ax4.legend(loc="lower left", fontsize=7, ncol=2,
+                       facecolor="#161b22", edgecolor="#30363d",
+                       labelcolor="#c9d1d9")
+        ax4.grid(True, alpha=0.15)
+
+        # Style all panels
+        for ax in axes.flat:
+            for s in ax.spines.values():
+                s.set_edgecolor("#30363d")
+            ax.tick_params(colors="#8b949e", labelsize=7)
+
+        # Super title
+        if reveal < n_assets:
+            title = f"Multi-Asset ARIMA Backtest · Revealing {reveal}/{n_assets} assets..."
+        else:
+            title = f"Multi-Asset ARIMA Backtest · All {n_assets} assets (6 categories)"
+        fig.suptitle(title, color="#f0f6fc", fontweight="bold", fontsize=13, y=0.98)
+        fig.tight_layout(rect=[0, 0, 1, 0.95])
+        return []
+
+    anim = animation.FuncAnimation(
+        fig, update, frames=n_frames, interval=1000 // fps,
+        blit=False, repeat=True,
+    )
+    anim.save(output_path, writer="pillow", fps=fps)
+    plt.close(fig)
+    print(f"  {output_path}")
+    return output_path
+
+
 if __name__ == "__main__":
     gif_pnl_surface_animated()
     gif_equity_curves()
@@ -965,3 +1163,4 @@ if __name__ == "__main__":
     gif_parameter_heatmap()
     gif_arima_backtest()
     gif_walk_forward_schedule()
+    gif_multi_asset_backtest()
