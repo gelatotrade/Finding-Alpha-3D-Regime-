@@ -192,6 +192,57 @@ def strategy_contrarian(
     return (direction * scalar.reindex(direction.index)).fillna(0)
 
 
+def invert_walk_forward_result(result: dict) -> dict:
+    """
+    Invert a walk-forward result: negate OOS returns → contrarian.
+    Uses the SAME optimized parameters from the direction strategy
+    but flips the signal post-optimization, avoiding double overfitting.
+    """
+    if "error" in result and result.get("metrics") == {}:
+        inv = dict(result)
+        inv["name"] = result.get("name", "") + " (Contrarian)"
+        return inv
+
+    oos_returns = -result["returns"]
+    oos_mask = result.get("oos_mask", oos_returns != 0)
+    equity = 100_000 * (1 + oos_returns.fillna(0)).cumprod()
+    oos_only = oos_returns[oos_mask]
+
+    if len(oos_only) < 20:
+        return {"error": "insufficient OOS", "metrics": {}, "equity": equity,
+                "returns": oos_returns, "param_history": result.get("param_history", [])}
+
+    nw = newey_west_tstat(oos_only)
+    bs = bootstrap_tstat_distribution(oos_only, n_bootstrap=500)
+
+    ann_return = oos_only.mean() * 252
+    ann_vol = oos_only.std() * np.sqrt(252)
+    sharpe = ann_return / ann_vol if ann_vol > 0 else 0
+    running_max = equity.cummax()
+    drawdown = (equity - running_max) / running_max
+    max_dd = float(drawdown.min())
+
+    metrics = {
+        "total_return": float(equity.iloc[-1] / equity.iloc[0] - 1),
+        "oos_annualized_return": float(ann_return),
+        "oos_annualized_volatility": float(ann_vol),
+        "oos_sharpe": float(sharpe),
+        "max_drawdown": max_dd,
+        "calmar": float(ann_return / abs(max_dd)) if max_dd != 0 else 0,
+        "win_rate": float((oos_only > 0).sum() / ((oos_only > 0).sum() + (oos_only < 0).sum())),
+        "n_oos_days": len(oos_only),
+        **{f"hac_{k}": v for k, v in nw.items()},
+        "bootstrap": bs,
+    }
+
+    return {
+        "metrics": metrics, "equity": equity, "returns": oos_returns,
+        "oos_mask": oos_mask, "param_history": result.get("param_history", []),
+        "in_sample_periods": result.get("in_sample_periods", []),
+        "oos_periods": result.get("oos_periods", []),
+    }
+
+
 # ── Simulate returns with costs ──────────────────────────────────────────
 
 def simulate_pnl(

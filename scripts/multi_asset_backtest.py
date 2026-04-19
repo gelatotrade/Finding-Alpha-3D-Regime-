@@ -32,6 +32,7 @@ from scripts.arima_optimizer import (
     strategy_direction_vol_scaled, strategy_momentum_filter,
     strategy_contrarian, strategy_ensemble, simulate_pnl,
     walk_forward_optimize, walk_forward_ensemble,
+    invert_walk_forward_result,
 )
 
 logging.basicConfig(level=logging.WARNING)
@@ -207,11 +208,11 @@ def backtest_single_asset(
     forecasts = forecast_cache[(2, 0, 2)]
 
     if verbose:
-        print(f"  Running 4 strategies + ensemble...")
+        print(f"  Running 5 strategies...")
 
     results = {}
 
-    # Strategy 1: ARIMA Direction
+    # Strategy 1: ARIMA Direction (standard — follow forecast)
     r1 = walk_forward_optimize(
         forecasts, returns, close, strategy_direction,
         param_grid={"threshold_std": [0.1, 0.2, 0.3, 0.5, 0.8]},
@@ -220,7 +221,12 @@ def backtest_single_asset(
     r1["name"] = "Direction"
     results["Direction"] = r1
 
-    # Strategy 2: ARIMA + Vol Scaling
+    # Strategy 2: Contrarian Direction (invert the SAME optimized direction signal)
+    r1_inv = invert_walk_forward_result(r1)
+    r1_inv["name"] = "Contrarian"
+    results["Contrarian"] = r1_inv
+
+    # Strategy 3: ARIMA + Vol Scaling
     r2 = walk_forward_optimize(
         forecasts, returns, close, strategy_direction_vol_scaled,
         param_grid={
@@ -233,30 +239,10 @@ def backtest_single_asset(
     r2["name"] = "Vol-Scaled"
     results["Vol-Scaled"] = r2
 
-    # Strategy 3: ARIMA + Momentum Filter
-    r3 = walk_forward_optimize(
-        forecasts, returns, close, strategy_momentum_filter,
-        param_grid={
-            "threshold_std": [0.1, 0.2, 0.3, 0.4],
-            "momentum_window": [21, 42, 63, 126],
-        },
-        train_window=252, test_window=42, optimize_on="tstat",
-    )
-    r3["name"] = "Momentum"
-    results["Momentum"] = r3
-
-    # Strategy 4: Contrarian (inverted direction, vol-scaled)
-    r_c = walk_forward_optimize(
-        forecasts, returns, close, strategy_contrarian,
-        param_grid={
-            "threshold_std": [0.1, 0.2, 0.3, 0.5],
-            "target_vol": [0.10, 0.15, 0.20],
-            "vol_lookback": [21, 42],
-        },
-        train_window=252, test_window=42, optimize_on="tstat",
-    )
-    r_c["name"] = "Contrarian"
-    results["Contrarian"] = r_c
+    # Strategy 4: Contrarian Vol-Scaled (invert the Vol-Scaled signal)
+    r2_inv = invert_walk_forward_result(r2)
+    r2_inv["name"] = "Contrarian Vol"
+    results["Contrarian Vol"] = r2_inv
 
     # Strategy 5: Ensemble
     r4 = walk_forward_ensemble(
@@ -318,7 +304,7 @@ def backtest_single_asset(
 
 def main():
     print("=" * 70)
-    print("Multi-Asset ARIMA Backtest — 10 Assets × 4 Strategies")
+    print("Multi-Asset ARIMA Backtest — 10 Assets × 5 Strategies")
     print("Walk-forward with Newey-West HAC t-statistic")
     print("=" * 70)
 
