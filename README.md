@@ -76,10 +76,10 @@ python visualization/generate_gifs.py
 
 ## Multi-Asset Cross-Category Backtest · Reality Check
 
-The same ARIMA walk-forward engine tested on **10 assets across 6 categories** with realistic market-calibrated autocorrelation structure. This demonstrates what happens when AR coefficients match real-world levels (0.03–0.20) rather than synthetic strong-signal data (0.35–0.50).
+The same ARIMA walk-forward engine tested on **10 assets across 6 categories** with realistic market-calibrated autocorrelation structure. Five strategies per asset (Direction, Vol-Scaled, Momentum, Contrarian, Ensemble) compete via walk-forward with in-sample t-stat optimization and strict OOS evaluation.
 
 ### Cross-Asset ARIMA Backtest
-Animated 4-panel dashboard revealing each asset one by one: equity curves, HAC t-statistics, category averages, and drawdowns. Every asset shows negative alpha — confirming markets are approximately efficient at realistic autocorrelation levels.
+Animated 4-panel dashboard revealing each asset one by one: equity curves, HAC t-statistics, category averages, and drawdowns. Every asset shows negative alpha after costs and walk-forward parameter overfitting — the honest result at realistic autocorrelation levels.
 
 ![Multi-Asset Backtest](assets/multi_asset_backtest.gif)
 
@@ -89,22 +89,26 @@ Animated 4-panel dashboard revealing each asset one by one: equity curves, HAC t
 |-------|----------|--------------|-------------:|-------:|-------:|-------:|-----:|
 | AAPL | Stocks | Ensemble | -0.59 | -0.44 | -5.9% | -12.8% | n.s. |
 | MSFT | Stocks | Direction | -1.33 | -0.71 | -41.7% | -55.8% | n.s. |
-| TSLA | Stocks | Direction | -2.55 | -1.64 | -93.6% | -97.8% | 5% |
+| TSLA | Stocks | Contrarian | -1.69 | -1.14 | -46.3% | -48.4% | n.s. |
 | BTC | Crypto | Ensemble | -1.02 | -0.62 | -16.6% | -22.4% | n.s. |
 | ETH | Crypto | Momentum | -0.71 | -0.43 | -75.8% | -90.4% | n.s. |
 | SPY | Indices | Ensemble | -2.26 | -1.46 | -18.9% | -21.8% | 5% |
 | QQQ | Indices | Direction | -2.80 | -1.53 | -43.8% | -45.9% | 1% |
 | GLD | Commodities | Ensemble | -2.41 | -1.52 | -19.1% | -22.5% | 5% |
-| TLT | Bonds | Momentum | -3.68 | -2.35 | -54.9% | -54.9% | 1% |
+| TLT | Bonds | Contrarian | -3.46 | -2.17 | -48.0% | -50.9% | 1% |
 | EURUSD | Forex | Momentum | -3.63 | -2.15 | -36.5% | -38.2% | 1% |
 
-### Key Insight
+*5 strategies tested per asset. Contrarian inverts the ARIMA direction signal with vol targeting. Ensemble aggregates ARIMA(1,0,1) + ARIMA(2,0,2).*
 
-The contrast between sections is the point:
-- **Synthetic AR(2) data** (strong coefficients 0.35–0.50) → all strategies achieve **t > 5** (5-sigma significance)
-- **Realistic market data** (weak coefficients 0.03–0.20) → all strategies show **negative alpha** after costs
+### Key Insight — Academic Honesty
 
-This validates the engine's integrity: it doesn't hallucinate alpha where none exists, and correctly identifies exploitable autocorrelation when present.
+The contrast validates the engine's integrity:
+- **Synthetic AR(2) data** (strong coefficients 0.35–0.50) → **t > 5** on all 5 strategies (5-sigma significance)
+- **Realistic market data** (weak coefficients 0.03–0.20) → **negative alpha** across all 10 assets
+
+Even the contrarian variant (which inverts the signal) fails — the negative t-stats aren't from a systematic inverse; they're from **walk-forward parameter overfitting**. When the signal-to-noise is low enough, t-stat maximization in-sample picks parameters that actively hurt out-of-sample. This is the classic symptom of an efficient market: no amount of parameter tuning can manufacture alpha from weak autocorrelation.
+
+The engine does **not** hallucinate alpha where none exists. This is the correct outcome.
 
 Run it:
 ```bash

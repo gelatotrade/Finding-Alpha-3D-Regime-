@@ -30,8 +30,8 @@ from signals.arima_forecaster import ArimaForecaster
 from scripts.arima_optimizer import (
     precompute_forecasts, strategy_direction, strategy_confidence,
     strategy_direction_vol_scaled, strategy_momentum_filter,
-    strategy_ensemble, simulate_pnl, walk_forward_optimize,
-    walk_forward_ensemble,
+    strategy_contrarian, strategy_ensemble, simulate_pnl,
+    walk_forward_optimize, walk_forward_ensemble,
 )
 
 logging.basicConfig(level=logging.WARNING)
@@ -207,7 +207,7 @@ def backtest_single_asset(
     forecasts = forecast_cache[(2, 0, 2)]
 
     if verbose:
-        print(f"  Running 3 strategies + ensemble...")
+        print(f"  Running 4 strategies + ensemble...")
 
     results = {}
 
@@ -245,7 +245,20 @@ def backtest_single_asset(
     r3["name"] = "Momentum"
     results["Momentum"] = r3
 
-    # Strategy 4: Ensemble
+    # Strategy 4: Contrarian (inverted direction, vol-scaled)
+    r_c = walk_forward_optimize(
+        forecasts, returns, close, strategy_contrarian,
+        param_grid={
+            "threshold_std": [0.1, 0.2, 0.3, 0.5],
+            "target_vol": [0.10, 0.15, 0.20],
+            "vol_lookback": [21, 42],
+        },
+        train_window=252, test_window=42, optimize_on="tstat",
+    )
+    r_c["name"] = "Contrarian"
+    results["Contrarian"] = r_c
+
+    # Strategy 5: Ensemble
     r4 = walk_forward_ensemble(
         forecast_cache, returns, close,
         param_grid={
