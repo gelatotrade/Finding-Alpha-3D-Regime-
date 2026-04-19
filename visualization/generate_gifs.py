@@ -675,7 +675,7 @@ def gif_arima_backtest(output_path=None, fps=12):
 
     colors = ["#3fb950", "#58a6ff", "#bc8cff", "#f0883e", "#f85149"]
 
-    fig, axes = plt.subplots(2, 2, figsize=(13, 8), dpi=100,
+    fig, axes = plt.subplots(2, 2, figsize=(12, 7), dpi=85,
                              gridspec_kw={"height_ratios": [1.3, 1]})
     fig.patch.set_facecolor("#0d1117")
     (ax_eq, ax_fc), (ax_tstat, ax_drawdown) = axes
@@ -685,7 +685,7 @@ def gif_arima_backtest(output_path=None, fps=12):
     oos_masks = {r["name"]: r.get("oos_mask", pd.Series(False, index=r["equity"].index))
                  for r in results}
 
-    n_frames = 80
+    n_frames = 48
     dates = prices.index
     min_progress_idx = int(len(dates) * 0.25)
 
